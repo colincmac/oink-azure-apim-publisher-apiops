@@ -1,0 +1,18 @@
+{
+  "name": "fin-acct-mgmt-v2",
+  "properties": {
+    "path": "fin-account-mgmt",
+    "displayName": "Financial Account Management",
+    "apiRevision": "1",
+    "apiRevisionDescription": "V2 - initial revision",
+    "apiVersion": "v2",
+    "apiVersionDescription": "User management of financial accounts.",
+    "apiVersionSetId": "/subscriptions/71db92d7-5d50-4033-8937-b5d2a6102f5e/resourceGroups/lz-apps-mgmt-oink/providers/Microsoft.ApiManagement/service/oink-dev-001/apiVersionSets/ac16839aef5a57fb8a0a47fc6d19c665",
+    "isCurrent": true,
+    "protocols": [
+      "https"
+    ],
+    "serviceUrl": "http://localhost:7071/api/v2",
+    "subscriptionRequired": true
+  }
+}
