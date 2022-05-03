@@ -3,7 +3,7 @@ info:
   title: Echo API
   version: '1.0'
 servers:
-  - url: https://apim.qa.colinmac.dev/echo
+  - url: https://oink-dev-001.azure-api.net/echo
 paths:
   /resource:
     get:
