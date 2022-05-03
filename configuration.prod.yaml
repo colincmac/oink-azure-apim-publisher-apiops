@@ -1,28 +1,26 @@
-apimServiceName: [your prod apim instance name goes here]
+apimServiceName: oink-prod-001
 namedValues:
-  - name: [name goes here. e.g. environment or SearchEngineBackendURL]
-    displayName: [display name  goes here]
-    value: [replacement value in the target environment. e.g. name value can be dev in dev environment and prod in the prod environment]
+  - name: BackendUrl
+    displayName: Backend for the Prod API
+    value: api.colinmac.dev
 loggers:
-    - name: [suorce environment app insight name goes here. e.g. apim-lab-insights]
+    - name: apim-prod
       loggerType: applicationInsights
-      description: [app insight description goes here]
-      resourceId: "/subscriptions/[Azure subscription id for the target environment goes here]/resourceGroups/
-                   [resource group name for the target environment goes here]/providers/microsoft.insights/components/
-                   [suorce environment app insight name goes here. e.g. apim-lab-prod-insights]"
+      description: Production App Insights
+      resourceId: "/subscriptions/71db92d7-5d50-4033-8937-b5d2a6102f5e/resourcegroups/lz-apps-mgmt-oink/providers/microsoft.insights/components/apim-prod"
       credentials:
-        instrumentationKey: "{{destination environment namevalue key for the application insights goes here. e.g. Logger-Credentials--62390d98217d201158b4bfb3}}"
+        instrumentationKey: "Logger-Credentials--apim-prod"
       isBuffered: true
 diagnostics:
    - name: applicationinsights
      verbosity: Error
 apis:
-  - name: "[target api to apply application insights to]"
+  - name: "fin-acct-mgmt"
     diagnostics:
       - name: applicationinsights
         verbosity: Error
-        loggerId: "/subscriptions/[Azure subscription id for the target environment goes here]/resourceGroups/[resource group name for the target environment goes here]/
-                   providers/Microsoft.ApiManagement/service/[apim instance name for the target environment goes here]/loggers/[suorce environment app insight name goes here]"
+        loggerId: "/subscriptions/71db92d7-5d50-4033-8937-b5d2a6102f5e/resourceGroups/lz-apps-mgmt-oink/
+                   providers/Microsoft.ApiManagement/service/oink-prod-001/loggers/apim-prod"
         
 
 

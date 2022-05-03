@@ -6,9 +6,9 @@ on:
 jobs:
   extract:
     runs-on: ubuntu-latest
-    environment: dev # change this to match the dev environment created in settings 
+    environment: Dev # change this to match the dev environment created in settings 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
           
       - name: Download artifact
         uses: dawidd6/action-download-artifact@v2
@@ -29,6 +29,7 @@ jobs:
         run: |
           chmod +x ./extractor
           ./extractor
+
       - name: publish artifact
         uses: actions/upload-artifact@v2
         env:
@@ -39,9 +40,9 @@ jobs:
           
   create-pull-request:
     needs: extract
-    runs-on: [ubuntu-latest]
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
           
       - name: Download artifacts-from-portal
         uses: actions/download-artifact@v2
