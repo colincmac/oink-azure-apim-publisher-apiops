@@ -241,7 +241,7 @@ internal class Publisher : BackgroundService
                 default: break;
             }
         }
-
+        logger.LogInformation($"Found {apiVersionSetInformationFiles.Count} version set files");
         await PutServiceInformationFile(serviceInformationFiles, cancellationToken);
         await PutNamedValueInformationFiles(namedValueInformationFiles, cancellationToken);
         await PutServicePolicyFile(servicePolicyFiles, cancellationToken);
