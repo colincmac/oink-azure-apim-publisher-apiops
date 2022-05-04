@@ -1,7 +1,7 @@
 apimServiceName: oink-staging-001
 namedValues:
-  - name: BackendUrl
-    displayName: Backend for the Staging API
+  - name: ColinMacDev
+    displayName: ColinMacDev
     value: api.staging.colinmac.dev
 loggers:
     - name: apim-staging

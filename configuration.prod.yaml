@@ -1,7 +1,7 @@
 apimServiceName: oink-prod-001
 namedValues:
-  - name: BackendUrl
-    displayName: Backend for the Prod API
+  - name: ColinMacDev
+    displayName: ColinMacDev
     value: api.colinmac.dev
 loggers:
     - name: apim-prod
