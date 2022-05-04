@@ -1,0 +1,16 @@
+{
+  "name": "pet-store-v1",
+  "properties": {
+    "path": "pet-store",
+    "displayName": "Pet Store",
+    "apiRevision": "1",
+    "apiVersion": "v1",
+    "apiVersionSetId": "/subscriptions/71db92d7-5d50-4033-8937-b5d2a6102f5e/resourceGroups/lz-apps-mgmt-oink/providers/Microsoft.ApiManagement/service/oink-dev-001/apiVersionSets/62728ea3b51b0bcc3db28605",
+    "description": "",
+    "isCurrent": true,
+    "protocols": [
+      "https"
+    ],
+    "subscriptionRequired": true
+  }
+}
