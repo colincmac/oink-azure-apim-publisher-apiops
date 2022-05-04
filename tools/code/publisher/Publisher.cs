@@ -186,6 +186,7 @@ internal class Publisher : BackgroundService
         await DeleteApiDiagnostics(apiDiagnosticInformationFiles, cancellationToken);
         await DeleteApiPolicies(apiPolicyFiles, cancellationToken);
         await DeleteApis(apiInformationFiles, cancellationToken);
+        await DeleteApiVersionSets(apiVersionSetInformationFiles, cancellationToken);
         await DeleteLoggers(loggerInformationFiles, cancellationToken);
         await DeleteGatewayApis(gatewayApisFiles, cancellationToken);
         await DeleteGateways(gatewayInformationFiles, cancellationToken);
@@ -378,6 +379,28 @@ internal class Publisher : BackgroundService
         var name = GatewayName.From(Gateway.Deserialize(json).Name);
 
         await Gateway.Delete(deleteResource, serviceProviderUri, serviceName, name, cancellationToken);
+    }
+
+
+    private async ValueTask DeleteApiVersionSets(IReadOnlyCollection<ApiVersionSetInformationFile> files, CancellationToken cancellationToken)
+    {
+        await Parallel.ForEachAsync(files, cancellationToken, DeleteApiVersionSet);
+    }
+
+    private async ValueTask DeleteApiVersionSet(ApiVersionSetInformationFile file, CancellationToken cancellationToken)
+    {
+        logger.LogInformation("File {apiVersionSetInformationFile} was removed, deleting api version set...", file.Path);
+
+        if (commitId is null)
+        {
+            throw new InvalidOperationException("Commit ID is null. We need it to get the deleted file contents.");
+        }
+
+        var fileText = await Git.GetPreviousCommitContents(commitId, file, serviceDirectory);
+        var json = JsonNode.Parse(fileText)?.AsObject() ?? throw new InvalidOperationException("Could not deserialize file contents to JSON.");
+        var id = ApiVersionSetId.From(ApiVersionSet.Deserialize(json).Name);
+
+        await ApiVersionSet.Delete(deleteResource, serviceProviderUri, serviceName, id, cancellationToken);
     }
 
     private async ValueTask PutGatewayApisFiles(IReadOnlyCollection<GatewayApisFile> files, CancellationToken cancellationToken)
