@@ -1,8 +1,4 @@
 apimServiceName: oink-staging-001
-namedValues:
-  - name: ColinMacDev
-    displayName: ColinMacDev
-    value: api.staging.colinmac.dev
 loggers:
     - name: apim-staging
       loggerType: applicationInsights
