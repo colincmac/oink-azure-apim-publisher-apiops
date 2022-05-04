@@ -1,0 +1,14 @@
+{
+  "name": "star-wars",
+  "properties": {
+    "path": "star-wars",
+    "displayName": "Star Wars",
+    "apiRevision": "1",
+    "description": "",
+    "isCurrent": true,
+    "protocols": [
+      "https"
+    ],
+    "subscriptionRequired": true
+  }
+}
