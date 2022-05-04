@@ -35,12 +35,12 @@ public sealed record ApiVersionSetDirectory : DirectoryRecord
     public static ApiVersionSetDirectory? TryFrom(ServiceDirectory serviceDirectory, DirectoryInfo? directory)
     {
         // apis/<api-name>
-        var apisDir = directory?.Parent;
-        if (apisDir is not null)
+        var parentDirectory = directory?.Parent;
+        if (parentDirectory is not null)
         {
-            var apisDirectory = ApisDirectory.TryFrom(serviceDirectory, apisDir);
+            var apisDirectory = ApisDirectory.TryFrom(serviceDirectory, parentDirectory);
 
-            return apisDirectory is null ? null : From(apisDirectory, ApiDisplayName.From(apisDir!.Name));
+            return apisDirectory is null ? null : From(apisDirectory, ApiDisplayName.From(directory!.Name));
         }
         else
         {
