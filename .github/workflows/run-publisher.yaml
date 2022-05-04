@@ -49,7 +49,7 @@ jobs:
   #     API_MANAGEMENT_SERVICE_NAME: ${{ secrets.API_MANAGEMENT_SERVICE_NAME }} 
 
   create-prod:
-    needs: [get-commit, create-dev, create-staging]
+    needs: [get-commit, create-dev]
     uses: ./.github/workflows/run-publisher-with-env.yaml
     with:
       API_MANAGEMENT_ENVIRONMENT: Prod # change this to match the prod environment created in settings
