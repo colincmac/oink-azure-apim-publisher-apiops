@@ -1,0 +1,15 @@
+{
+  "name": "star-wars",
+  "properties": {
+    "path": "star-wars",
+    "displayName": "Star Wars",
+    "apiRevision": "1",
+    "description": "",
+    "isCurrent": true,
+    "protocols": [
+      "https"
+    ],
+    "serviceUrl": "https://oink-dev-001.azure-api.net/star-wars",
+    "subscriptionRequired": true
+  }
+}
