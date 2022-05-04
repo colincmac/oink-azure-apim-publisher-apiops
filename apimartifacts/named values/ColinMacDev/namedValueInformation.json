@@ -1,0 +1,9 @@
+{
+  "name": "ColinMacDev",
+  "properties": {
+    "displayName": "ColinMacDev",
+    "secret": false,
+    "tags": [],
+    "value": "api.qa.colinmac.dev"
+  }
+}
