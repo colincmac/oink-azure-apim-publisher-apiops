@@ -2,9 +2,9 @@ openapi: 3.0.1
 info:
   title: Echo Versioned
   description: ''
-  version: beta
+  version: v1
 servers:
-  - url: https://oink-dev-001.azure-api.net/echo-v/beta
+  - url: https://oink-dev-001.azure-api.net/echo-v/v1
 paths: { }
 components:
   securitySchemes:
