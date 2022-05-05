@@ -12,176 +12,176 @@ namespace common;
 
 public sealed record ApiName : NonEmptyString
 {
-    private ApiName(string value) : base(value)
-    {
-    }
+  private ApiName(string value) : base(value)
+  {
+  }
 
-    public static ApiName From(string value) => new(value);
+  public static ApiName From(string value) => new(value);
 }
 
 public sealed record ApiDisplayName : NonEmptyString
 {
-    private ApiDisplayName(string value) : base(value)
-    {
-    }
+  private ApiDisplayName(string value) : base(value)
+  {
+  }
 
-    public static ApiDisplayName From(string value) => new(value);
+  public static ApiDisplayName From(string value) => new(value);
 }
 
 public sealed record ApiVersion : NonEmptyString
 {
-    private ApiVersion(string value) : base(value)
-    {
-    }
+  private ApiVersion(string? value) : base(value ?? "Original")
+  {
+  }
 
-    public static ApiVersion From(string? value) => string.IsNullOrEmpty(value) ? new("Original") : new(value);
+  public static ApiVersion From(string? value) => new(value);
 }
 
 public sealed record ApiRevision : NonEmptyString
 {
-    private ApiRevision(string value) : base(value)
-    {
-    }
+  private ApiRevision(string? value) : base(value ?? "1")
+  {
+  }
 
-    public static ApiRevision From(string? value) => string.IsNullOrEmpty(value) ? new("1") : new(value);
+  public static ApiRevision From(string? value) => new(value);
 }
 
 public sealed record ApisDirectory : DirectoryRecord
 {
-    private static readonly string name = "apis";
+  private static readonly string name = "apis";
 
-    public ServiceDirectory ServiceDirectory { get; }
+  public ServiceDirectory ServiceDirectory { get; }
 
-    private ApisDirectory(ServiceDirectory serviceDirectory) : base(serviceDirectory.Path.Append(name))
-    {
-        ServiceDirectory = serviceDirectory;
-    }
+  private ApisDirectory(ServiceDirectory serviceDirectory) : base(serviceDirectory.Path.Append(name))
+  {
+    ServiceDirectory = serviceDirectory;
+  }
 
-    public static ApisDirectory From(ServiceDirectory serviceDirectory) => new(serviceDirectory);
+  public static ApisDirectory From(ServiceDirectory serviceDirectory) => new(serviceDirectory);
 
-    public static ApisDirectory? TryFrom(ServiceDirectory serviceDirectory, DirectoryInfo? directory) =>
-        name.Equals(directory?.Name) && serviceDirectory.PathEquals(directory.Parent)
-        ? new(serviceDirectory)
-        : null;
+  public static ApisDirectory? TryFrom(ServiceDirectory serviceDirectory, DirectoryInfo? directory) =>
+      name.Equals(directory?.Name) && serviceDirectory.PathEquals(directory.Parent)
+      ? new(serviceDirectory)
+      : null;
 }
 
 public sealed record ApiDirectory : DirectoryRecord
 {
-    public ApisDirectory ApisDirectory { get; }
-    public ApiDisplayName ApiDisplayName { get; }
+  public ApisDirectory ApisDirectory { get; }
+  public ApiDisplayName ApiDisplayName { get; }
 
-    public ApiVersion? ApiVersion { get; }
-    public ApiRevision? ApiRevision { get; }
+  public ApiVersion? ApiVersion { get; }
+  public ApiRevision? ApiRevision { get; }
 
-    private ApiDirectory(ApisDirectory apisDirectory, ApiDisplayName apiDisplayName, ApiVersion? apiVersion, ApiRevision? apiRevision) : base(apisDirectory.Path.Append(apiDisplayName).Append(apiVersion ?? "").Append(apiRevision ?? ""))
+  private ApiDirectory(ApisDirectory apisDirectory, ApiDisplayName apiDisplayName, ApiVersion? apiVersion, ApiRevision? apiRevision) : base(apisDirectory.Path.Append(apiDisplayName).Append(apiVersion ?? "").Append(apiRevision ?? ""))
+  {
+    ApisDirectory = apisDirectory;
+    ApiDisplayName = apiDisplayName;
+    ApiVersion = apiVersion;
+    ApiRevision = apiRevision;
+  }
+
+  public static ApiDirectory From(ApisDirectory apisDirectory, ApiDisplayName apiDisplayName, ApiVersion? apiVersion, ApiRevision? apiRevision) => new(apisDirectory, apiDisplayName, apiVersion, apiRevision);
+
+  public static ApiDirectory? TryFrom(ServiceDirectory serviceDirectory, DirectoryInfo? directory)
+  {
+    // apis/<api-name>/<version>/<revision>
+    var revisionDir = directory;
+    var versionDir = revisionDir?.Parent;
+    var apiDir = versionDir?.Parent;
+    var apisDir = apiDir?.Parent;
+    if (apisDir is not null)
     {
-        ApisDirectory = apisDirectory;
-        ApiDisplayName = apiDisplayName;
-        ApiVersion = apiVersion;
-        ApiRevision = apiRevision;
+      var apisDirectory = ApisDirectory.TryFrom(serviceDirectory, apisDir);
+
+      return apisDirectory is null ? null : From(apisDirectory, ApiDisplayName.From(apiDir!.Name), ApiVersion.From(versionDir!.Name), ApiRevision.From(revisionDir!.Name));
     }
-
-    public static ApiDirectory From(ApisDirectory apisDirectory, ApiDisplayName apiDisplayName, ApiVersion? apiVersion, ApiRevision? apiRevision) => new(apisDirectory, apiDisplayName, apiVersion, apiRevision);
-
-    public static ApiDirectory? TryFrom(ServiceDirectory serviceDirectory, DirectoryInfo? directory)
+    else
     {
-        // apis/<api-name>/<version>/<revision>
-        var revisionDir = directory;
-        var versionDir = revisionDir?.Parent;
-        var apiDir = versionDir?.Parent;
-        var apisDir = apiDir?.Parent;
-        if (apisDir is not null)
-        {
-            var apisDirectory = ApisDirectory.TryFrom(serviceDirectory, apisDir);
-
-            return apisDirectory is null ? null : From(apisDirectory, ApiDisplayName.From(apiDir!.Name), ApiVersion.From(versionDir!.Name), ApiRevision.From(revisionDir!.Name));
-        }
-        else
-        {
-            return null;
-        }
+      return null;
     }
+  }
 }
 
 public sealed record ApiInformationFile : FileRecord
 {
-    private static readonly string name = "apiInformation.json";
+  private static readonly string name = "apiInformation.json";
 
-    public ApiDirectory ApiDirectory { get; }
+  public ApiDirectory ApiDirectory { get; }
 
-    private ApiInformationFile(ApiDirectory apiDirectory) : base(apiDirectory.Path.Append(name))
+  private ApiInformationFile(ApiDirectory apiDirectory) : base(apiDirectory.Path.Append(name))
+  {
+    ApiDirectory = apiDirectory;
+  }
+
+  public static ApiInformationFile From(ApiDirectory apiDirectory) => new(apiDirectory);
+
+  public static ApiInformationFile? TryFrom(ServiceDirectory serviceDirectory, FileInfo file)
+  {
+    if (name.Equals(file.Name))
     {
-        ApiDirectory = apiDirectory;
+      var apiDirectory = ApiDirectory.TryFrom(serviceDirectory, file.Directory);
+
+      return apiDirectory is null ? null : new(apiDirectory);
     }
-
-    public static ApiInformationFile From(ApiDirectory apiDirectory) => new(apiDirectory);
-
-    public static ApiInformationFile? TryFrom(ServiceDirectory serviceDirectory, FileInfo file)
+    else
     {
-        if (name.Equals(file.Name))
-        {
-            var apiDirectory = ApiDirectory.TryFrom(serviceDirectory, file.Directory);
-
-            return apiDirectory is null ? null : new(apiDirectory);
-        }
-        else
-        {
-            return null;
-        }
+      return null;
     }
+  }
 }
 
 public static class Api
 {
-    private static readonly JsonSerializerOptions serializerOptions = new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+  private static readonly JsonSerializerOptions serializerOptions = new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 
-    internal static Uri GetUri(ServiceProviderUri serviceProviderUri, ServiceName serviceName, ApiName apiName) =>
-        Service.GetUri(serviceProviderUri, serviceName)
-               .AppendPath("apis")
-               .AppendPath(apiName);
+  internal static Uri GetUri(ServiceProviderUri serviceProviderUri, ServiceName serviceName, ApiName apiName) =>
+      Service.GetUri(serviceProviderUri, serviceName)
+             .AppendPath("apis")
+             .AppendPath(apiName);
 
-    internal static Uri ListUri(ServiceProviderUri serviceProviderUri, ServiceName serviceName) =>
-        Service.GetUri(serviceProviderUri, serviceName)
-               .AppendPath("apis");
+  internal static Uri ListUri(ServiceProviderUri serviceProviderUri, ServiceName serviceName) =>
+      Service.GetUri(serviceProviderUri, serviceName)
+             .AppendPath("apis");
 
-    public static ApiName GetNameFromFile(ApiInformationFile file)
-    {
-        var jsonObject = file.ReadAsJsonObject();
-        var api = Deserialize(jsonObject);
+  public static ApiName GetNameFromFile(ApiInformationFile file)
+  {
+    var jsonObject = file.ReadAsJsonObject();
+    var api = Deserialize(jsonObject);
 
-        return ApiName.From(api.Name);
-    }
+    return ApiName.From(api.Name);
+  }
 
-    public static Models.Api Deserialize(JsonObject jsonObject) =>
-        JsonSerializer.Deserialize<Models.Api>(jsonObject, serializerOptions) ?? throw new InvalidOperationException("Cannot deserialize JSON.");
+  public static Models.Api Deserialize(JsonObject jsonObject) =>
+      JsonSerializer.Deserialize<Models.Api>(jsonObject, serializerOptions) ?? throw new InvalidOperationException("Cannot deserialize JSON.");
 
-    public static JsonObject Serialize(Models.Api api) =>
-        JsonSerializer.SerializeToNode(api, serializerOptions)?.AsObject() ?? throw new InvalidOperationException("Cannot serialize to JSON.");
+  public static JsonObject Serialize(Models.Api api) =>
+      JsonSerializer.SerializeToNode(api, serializerOptions)?.AsObject() ?? throw new InvalidOperationException("Cannot serialize to JSON.");
 
-    public static async ValueTask<Models.Api> Get(Func<Uri, CancellationToken, ValueTask<JsonObject>> getResource, ServiceProviderUri serviceProviderUri, ServiceName serviceName, ApiName apiName, CancellationToken cancellationToken)
-    {
-        var uri = GetUri(serviceProviderUri, serviceName, apiName);
-        var json = await getResource(uri, cancellationToken);
-        return Deserialize(json);
-    }
+  public static async ValueTask<Models.Api> Get(Func<Uri, CancellationToken, ValueTask<JsonObject>> getResource, ServiceProviderUri serviceProviderUri, ServiceName serviceName, ApiName apiName, CancellationToken cancellationToken)
+  {
+    var uri = GetUri(serviceProviderUri, serviceName, apiName);
+    var json = await getResource(uri, cancellationToken);
+    return Deserialize(json);
+  }
 
-    public static IAsyncEnumerable<Models.Api> List(Func<Uri, CancellationToken, IAsyncEnumerable<JsonObject>> getResources, ServiceProviderUri serviceProviderUri, ServiceName serviceName, CancellationToken cancellationToken)
-    {
-        var uri = ListUri(serviceProviderUri, serviceName);
-        return getResources(uri, cancellationToken).Select(Deserialize);
-    }
+  public static IAsyncEnumerable<Models.Api> List(Func<Uri, CancellationToken, IAsyncEnumerable<JsonObject>> getResources, ServiceProviderUri serviceProviderUri, ServiceName serviceName, CancellationToken cancellationToken)
+  {
+    var uri = ListUri(serviceProviderUri, serviceName);
+    return getResources(uri, cancellationToken).Select(Deserialize);
+  }
 
-    public static async ValueTask Put(Func<Uri, JsonObject, CancellationToken, ValueTask> putResource, ServiceProviderUri serviceProviderUri, ServiceName serviceName, Models.Api api, CancellationToken cancellationToken)
-    {
-        var name = ApiName.From(api.Name);
-        var uri = GetUri(serviceProviderUri, serviceName, name);
-        var json = Serialize(api);
-        await putResource(uri, json, cancellationToken);
-    }
+  public static async ValueTask Put(Func<Uri, JsonObject, CancellationToken, ValueTask> putResource, ServiceProviderUri serviceProviderUri, ServiceName serviceName, Models.Api api, CancellationToken cancellationToken)
+  {
+    var name = ApiName.From(api.Name);
+    var uri = GetUri(serviceProviderUri, serviceName, name);
+    var json = Serialize(api);
+    await putResource(uri, json, cancellationToken);
+  }
 
-    public static async ValueTask Delete(Func<Uri, CancellationToken, ValueTask> deleteResource, ServiceProviderUri serviceProviderUri, ServiceName serviceName, ApiName apiName, CancellationToken cancellationToken)
-    {
-        var uri = GetUri(serviceProviderUri, serviceName, apiName);
-        await deleteResource(uri, cancellationToken);
-    }
+  public static async ValueTask Delete(Func<Uri, CancellationToken, ValueTask> deleteResource, ServiceProviderUri serviceProviderUri, ServiceName serviceName, ApiName apiName, CancellationToken cancellationToken)
+  {
+    var uri = GetUri(serviceProviderUri, serviceName, apiName);
+    await deleteResource(uri, cancellationToken);
+  }
 }
