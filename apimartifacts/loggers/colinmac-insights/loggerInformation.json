@@ -1,0 +1,11 @@
+{
+  "name": "colinmac-insights",
+  "properties": {
+    "isBuffered": true,
+    "loggerType": "applicationInsights",
+    "resourceId": "/subscriptions/71db92d7-5d50-4033-8937-b5d2a6102f5e/resourceGroups/lz-connectivity-001/providers/microsoft.insights/components/colinmac-insights",
+    "credentials": {
+      "instrumentationKey": "{{Logger-Credentials--6273dd600b9c4e0c7071f151}}"
+    }
+  }
+}
