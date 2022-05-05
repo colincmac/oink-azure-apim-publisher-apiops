@@ -30,20 +30,20 @@ public sealed record ApiDisplayName : NonEmptyString
 
 public sealed record ApiVersion : NonEmptyString
 {
-    private ApiVersion(string? value) : base(value ?? "Original")
+    private ApiVersion(string value) : base(value)
     {
     }
 
-    public static ApiVersion From(string? value) => new(value);
+    public static ApiVersion From(string? value) => string.IsNullOrEmpty(value) ? new("Original") : new(value);
 }
 
 public sealed record ApiRevision : NonEmptyString
 {
-    private ApiRevision(string? value) : base(value ?? "1")
+    private ApiRevision(string value) : base(value)
     {
     }
 
-    public static ApiRevision From(string? value) => new(value);
+    public static ApiRevision From(string? value) => string.IsNullOrEmpty(value) ? new("1") : new(value);
 }
 
 public sealed record ApisDirectory : DirectoryRecord
