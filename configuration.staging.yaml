@@ -1,6 +1,6 @@
 apimServiceName: oink-staging-001
 loggers:
-    - name: apim-staging
+    - name: apim-dev
       loggerType: applicationInsights
       description: Staging App Insights
       resourceId: "/subscriptions/71db92d7-5d50-4033-8937-b5d2a6102f5e/resourcegroups/lz-apps-mgmt-oink/providers/microsoft.insights/components/apim-staging"
