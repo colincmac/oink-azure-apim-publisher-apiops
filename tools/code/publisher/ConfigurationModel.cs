@@ -68,6 +68,8 @@ internal record ConfigurationModel
     {
         public string? Name { get; init; }
         public string? Verbosity { get; init; }
+        public string? LoggerId { get; init; }
+
     };
 
     public record Api

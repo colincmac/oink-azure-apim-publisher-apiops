@@ -9,6 +9,7 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Reactive.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -550,6 +551,7 @@ internal class Publisher : BackgroundService
             {
                 Properties = diagnostic.Properties with
                 {
+                    LoggerId = configurationDiagnostic.LoggerId ?? diagnostic.Properties.LoggerId,
                     Verbosity = configurationDiagnostic.Verbosity ?? diagnostic.Properties.Verbosity
                 }
             };
@@ -957,6 +959,7 @@ internal class Publisher : BackgroundService
                 }
             };
         }
+        logger.LogInformation($"Api: {apiName} Diag: {JsonSerializer.Serialize(diagnostic)}");
 
         await ApiDiagnostic.Put(putResource, serviceProviderUri, serviceName, apiName, diagnostic, cancellationToken);
     }
