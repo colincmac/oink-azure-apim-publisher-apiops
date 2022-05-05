@@ -23,7 +23,7 @@ paths:
       parameters:
         - name: petId
           in: path
-          description: Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. ID of pet to update
+          description: Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. ID of pet to update
           required: true
           schema:
             type: integer
@@ -230,7 +230,7 @@ paths:
       parameters:
         - name: petId
           in: path
-          description: Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. ID of pet to return
+          description: Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. ID of pet to return
           required: true
           schema:
             type: integer
@@ -277,7 +277,7 @@ paths:
       parameters:
         - name: petId
           in: path
-          description: Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. ID of pet that needs to be updated
+          description: Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. ID of pet that needs to be updated
           required: true
           schema:
             type: integer
@@ -306,7 +306,7 @@ paths:
       parameters:
         - name: petId
           in: path
-          description: Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Pet id to delete
+          description: Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Pet id to delete
           required: true
           schema:
             type: integer
@@ -379,7 +379,7 @@ paths:
       parameters:
         - name: orderId
           in: path
-          description: Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. ID of pet that needs to be fetched
+          description: Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. ID of pet that needs to be fetched
           required: true
           schema:
             maximum: 10.0
@@ -423,7 +423,7 @@ paths:
       parameters:
         - name: orderId
           in: path
-          description: Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. ID of the order that needs to be deleted
+          description: Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. Format - int64. ID of the order that needs to be deleted
           required: true
           schema:
             minimum: 1.0
