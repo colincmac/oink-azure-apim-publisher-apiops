@@ -11,7 +11,7 @@ diagnostics:
    - name: applicationinsights
      verbosity: Error
 apis:
-  - name: "fin-acct-mgmt"
+  - name: echo-versioned
     diagnostics:
       - name: applicationinsights
         verbosity: Error
