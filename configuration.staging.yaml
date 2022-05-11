@@ -17,17 +17,6 @@ apis:
       - name: applicationinsights
         verbosity: Error
         loggerId: "/subscriptions/71db92d7-5d50-4033-8937-b5d2a6102f5e/resourceGroups/lz-apps-mgmt-oink/providers/Microsoft.ApiManagement/service/oink-staging-001/loggers/apim-staging"
-  - name: echo-versioned-v2
-    diagnostics:
-      - name: applicationinsights
-        verbosity: Error
-        loggerId: "/subscriptions/71db92d7-5d50-4033-8937-b5d2a6102f5e/resourceGroups/lz-apps-mgmt-oink/providers/Microsoft.ApiManagement/service/oink-staging-001/loggers/apim-staging"
-  - name: echo-versioned;rev=2
-    diagnostics:
-      - name: applicationinsights
-        verbosity: Error
-        loggerId: "/subscriptions/71db92d7-5d50-4033-8937-b5d2a6102f5e/resourceGroups/lz-apps-mgmt-oink/providers/Microsoft.ApiManagement/service/oink-staging-001/loggers/apim-staging"
-
 
 
 
