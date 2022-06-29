@@ -1,0 +1,14 @@
+{
+  "name": "test-new-api",
+  "properties": {
+    "path": "test",
+    "displayName": "New API",
+    "apiRevision": "1",
+    "isCurrent": true,
+    "protocols": [
+      "https"
+    ],
+    "serviceUrl": "http://echoapi.cloudapp.net/api",
+    "subscriptionRequired": true
+  }
+}
