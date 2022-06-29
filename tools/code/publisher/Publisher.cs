@@ -9,7 +9,6 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Reactive.Linq;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -28,6 +27,7 @@ internal class Publisher : BackgroundService
     private readonly ServiceProviderUri serviceProviderUri;
     private readonly ServiceName serviceName;
     private readonly CommitId? commitId;
+    private readonly FileInfo? configurationFile;
 
     public Publisher(IHostApplicationLifetime applicationLifetime, ILogger<Publisher> logger, IConfiguration configuration, AzureHttpClient azureHttpClient)
     {
@@ -39,8 +39,9 @@ internal class Publisher : BackgroundService
         this.serviceDirectory = GetServiceDirectory(configuration);
         this.configurationModel = configuration.Get<ConfigurationModel>();
         this.serviceProviderUri = GetServiceProviderUri(configuration, azureHttpClient);
-        this.serviceName = GetServiceName(configuration, serviceDirectory, configurationModel);
+        this.serviceName = GetServiceName(configuration);
         this.commitId = TryGetCommitId(configuration);
+        this.configurationFile = TryGetConfigurationFile(configuration);
     }
 
     private static ServiceDirectory GetServiceDirectory(IConfiguration configuration) =>
@@ -54,14 +55,11 @@ internal class Publisher : BackgroundService
         return ServiceProviderUri.From(azureHttpClient.ResourceManagerEndpoint, subscriptionId, resourceGroupName);
     }
 
-    private static ServiceName GetServiceName(IConfiguration configuration, ServiceDirectory serviceDirectory, ConfigurationModel configurationModel)
+    private static ServiceName GetServiceName(IConfiguration configuration)
     {
-        var configurationServiceName = configuration.TryGetValue("API_MANAGEMENT_SERVICE_NAME");
-        var serviceInformationFile = ServiceInformationFile.From(serviceDirectory);
-        var jsonServiceName = serviceInformationFile.Exists() ? Service.GetNameFromFile(serviceInformationFile) : null;
-        var configurationModelServiceName = configurationModel.ApimServiceName;
+        var serviceName = configuration.TryGetValue("apimServiceName") ?? configuration.TryGetValue("API_MANAGEMENT_SERVICE_NAME");
 
-        return ServiceName.From(configurationModelServiceName ?? jsonServiceName ?? configurationServiceName ?? throw new InvalidOperationException($"Could not find service name."));
+        return ServiceName.From(serviceName ?? throw new InvalidOperationException("Could not find service name in configuration. Either specify it in key 'apimServiceName' or 'API_MANAGEMENT_SERVICE_NAME'."));
     }
 
     private static CommitId? TryGetCommitId(IConfiguration configuration)
@@ -69,6 +67,13 @@ internal class Publisher : BackgroundService
         var commitId = configuration.TryGetValue("COMMIT_ID");
 
         return commitId is null ? null : CommitId.From(commitId);
+    }
+
+    private static FileInfo? TryGetConfigurationFile(IConfiguration configuration)
+    {
+        var filePath = configuration.TryGetValue("CONFIGURATION_YAML_PATH");
+
+        return filePath is null ? null : new FileInfo(filePath);
     }
 
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
@@ -100,88 +105,145 @@ internal class Publisher : BackgroundService
     private async ValueTask Run(CancellationToken cancellationToken)
     {
         logger.LogInformation("Getting files to process...");
-        var lookup = await GetFilesToProcess(cancellationToken);
-        var dictionary = lookup.ToImmutableDictionary(grouping => grouping.Key, grouping => grouping.ToImmutableList());
+        var dictionary = await GetFilesToProcess(cancellationToken);
 
         if (dictionary.TryGetValue(Action.Delete, out var filesToDelete))
         {
             logger.LogInformation("Deleting files...");
             await DeleteFiles(filesToDelete, cancellationToken);
         }
-        else if (dictionary.TryGetValue(Action.Put, out var filesToPut))
+
+        if (dictionary.TryGetValue(Action.Put, out var filesToPut))
         {
             logger.LogInformation("Putting files...");
             await PutFiles(filesToPut, cancellationToken);
         }
     }
 
-    private async ValueTask<ILookup<Action, FileInfo>> GetFilesToProcess(CancellationToken cancellationToken)
+    private async Task<ImmutableDictionary<Action, ImmutableList<FileRecord>>> GetFilesToProcess(CancellationToken cancellationToken)
     {
         if (commitId is null)
         {
             logger.LogInformation("Commit ID was not specified, getting all files from {serviceDirectory}...", serviceDirectory.Path);
-            return GetAllServiceDirectoryFiles();
+            var fileRecords = GetFileRecordsFromServiceDirectory().ToImmutableList();
+            return Enumerable.Repeat(fileRecords, 1).ToImmutableDictionary(_ => Action.Put);
         }
         else
         {
             logger.LogInformation("Getting files from commit ID {commitId}...", commitId);
-            return await GetFilesFromCommitId(commitId, cancellationToken);
+            var commitIdFileRecords = await GetFileRecordsFromCommitId(commitId, cancellationToken);
+            var configurationFileModified = await WasConfigurationFileChangedInCommitId(commitId, cancellationToken);
+
+            if (configurationFileModified)
+            {
+                logger.LogInformation("Configuration file was modified in commit ID, will include its contents.");
+
+                var configurationFileRecords = GetFileRecordsFromServiceDirectory()
+                                                .Where(IsFileRecordInConfiguration)
+                                                .ToImmutableList();
+
+                return configurationFileRecords.Any()
+                        // If the commit included artifacts to put, merge them with configuration records.
+                        ? commitIdFileRecords.SetItem(Action.Put,
+                                                      commitIdFileRecords.TryGetValue(Action.Put, out var existingCommitIdArtifacts)
+                                                      ? existingCommitIdArtifacts.Union(configurationFileRecords).ToImmutableList()
+                                                      : configurationFileRecords)
+                        : commitIdFileRecords;
+            }
+            else
+            {
+                return commitIdFileRecords;
+            }
         }
     }
 
-    private ILookup<Action, FileInfo> GetAllServiceDirectoryFiles() =>
-        ((DirectoryInfo)serviceDirectory).EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = true })
-                                         .ToLookup(_ => Action.Put);
+    private IEnumerable<FileRecord> GetFileRecordsFromServiceDirectory()
+    {
+        return ((DirectoryInfo)serviceDirectory).EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = true })
+                                                .Choose(TryClassifyFile);
+    }
 
-    private async ValueTask<ILookup<Action, FileInfo>> GetFilesFromCommitId(CommitId commitId, CancellationToken cancellationToken)
+    private async ValueTask<ImmutableDictionary<Action, ImmutableList<FileRecord>>> GetFileRecordsFromCommitId(CommitId commitId, CancellationToken cancellationToken)
     {
         var files =
             from grouping in Git.GetFilesFromCommit(commitId, serviceDirectory)
             let action = grouping.Key == CommitStatus.Delete ? Action.Delete : Action.Put
-            from file in grouping.ToAsyncEnumerable()
-            select (action, file);
+            let fileRecords = grouping.Choose(TryClassifyFile)
+            select (action, fileRecords);
 
-        return await files.ToLookupAsync(pair => pair.action, pair => pair.file, cancellationToken);
+        var fileList = await files.ToListAsync(cancellationToken);
+
+        return fileList.ToImmutableDictionary(pair => pair.action, pair => pair.fileRecords.ToImmutableList());
     }
 
-    private async ValueTask DeleteFiles(IReadOnlyCollection<FileInfo> files, CancellationToken cancellationToken)
+    private async Task<bool> WasConfigurationFileChangedInCommitId(CommitId commitId, CancellationToken cancellationToken)
     {
-        var servicePolicyFiles = new List<ServicePolicyFile>();
-        var gatewayInformationFiles = new List<GatewayInformationFile>();
-        var namedValueInformationFiles = new List<NamedValueInformationFile>();
-        var loggerInformationFiles = new List<LoggerInformationFile>();
-        var gatewayApisFiles = new List<GatewayApisFile>();
-        var productInformationFiles = new List<ProductInformationFile>();
-        var productPolicyFiles = new List<ProductPolicyFile>();
-        var productApisFiles = new List<ProductApisFile>();
-        var diagnosticInformationFiles = new List<DiagnosticInformationFile>();
-        var apiVersionSetInformationFiles = new List<ApiVersionSetInformationFile>();
-        var apiInformationFiles = new List<ApiInformationFile>();
-        var apiDiagnosticInformationFiles = new List<ApiDiagnosticInformationFile>();
-        var apiPolicyFiles = new List<ApiPolicyFile>();
-        var apiOperationPolicyFiles = new List<ApiOperationPolicyFile>();
-
-        foreach (var file in files)
+        if (configurationFile is null)
         {
-            switch (TryClassifyFile(file))
-            {
-                case ServicePolicyFile fileRecord: servicePolicyFiles.Add(fileRecord); break;
-                case NamedValueInformationFile fileRecord: namedValueInformationFiles.Add(fileRecord); break;
-                case GatewayInformationFile fileRecord: gatewayInformationFiles.Add(fileRecord); break;
-                case LoggerInformationFile fileRecord: loggerInformationFiles.Add(fileRecord); break;
-                case GatewayApisFile fileRecord: gatewayApisFiles.Add(fileRecord); break;
-                case ProductInformationFile fileRecord: productInformationFiles.Add(fileRecord); break;
-                case ProductPolicyFile fileRecord: productPolicyFiles.Add(fileRecord); break;
-                case ProductApisFile fileRecord: productApisFiles.Add(fileRecord); break;
-                case DiagnosticInformationFile fileRecord: diagnosticInformationFiles.Add(fileRecord); break;
-                case ApiVersionSetInformationFile fileRecord: apiVersionSetInformationFiles.Add(fileRecord); break;
-                case ApiInformationFile fileRecord: apiInformationFiles.Add(fileRecord); break;
-                case ApiDiagnosticInformationFile fileRecord: apiDiagnosticInformationFiles.Add(fileRecord); break;
-                case ApiPolicyFile fileRecord: apiPolicyFiles.Add(fileRecord); break;
-                case ApiOperationPolicyFile fileRecord: apiOperationPolicyFiles.Add(fileRecord); break;
-                default: break;
-            }
+            return false;
         }
+
+        var configurationDirectory = configurationFile.Directory;
+        if (configurationDirectory is null)
+        {
+            return false;
+        }
+
+        return await Git.GetFilesFromCommit(commitId, configurationDirectory)
+                        .Where(grouping => grouping.Key != CommitStatus.Delete)
+                        .Where(grouping => grouping.Any(file => file.FullName.Equals(configurationFile.FullName)))
+                        .AnyAsync(cancellationToken);
+    }
+
+    private bool IsFileRecordInConfiguration(FileRecord fileRecord)
+    {
+        switch (fileRecord)
+        {
+            case NamedValueInformationFile file:
+                var namedValueName = NamedValue.GetNameFromFile(file).ToString();
+                return configurationModel.NamedValues?.Any(value => value.Name?.Equals(namedValueName) ?? false) ?? false;
+            case GatewayInformationFile file:
+                var gatewayName = Gateway.GetNameFromFile(file).ToString();
+                return configurationModel.Gateways?.Any(value => value.Name?.Equals(gatewayName) ?? false) ?? false;
+            case LoggerInformationFile file:
+                var loggerName = Logger.GetNameFromFile(file).ToString();
+                return configurationModel.Loggers?.Any(value => value.Name?.Equals(loggerName) ?? false) ?? false;
+            case ProductInformationFile file:
+                var productName = Product.GetNameFromFile(file).ToString();
+                return configurationModel.Products?.Any(value => value.Name?.Equals(productName) ?? false) ?? false;
+            case DiagnosticInformationFile file:
+                var diagnosticName = Diagnostic.GetNameFromFile(file).ToString();
+                return configurationModel.Diagnostics?.Any(value => value.Name?.Equals(diagnosticName) ?? false) ?? false;
+            case ApiInformationFile file:
+                var apiName = Api.GetNameFromFile(file).ToString();
+                return configurationModel.Apis?.Any(value => value.Name?.Equals(apiName) ?? false) ?? false;
+            case ApiDiagnosticInformationFile file:
+                var apiDiagnosticName = ApiDiagnostic.GetNameFromFile(file).ToString();
+                var apiInformationFile = ApiInformationFile.From(file.ApiDiagnosticDirectory.ApiDiagnosticsDirectory.ApiDirectory);
+                var apiDiagnosticApiName = Api.GetNameFromFile(apiInformationFile).ToString();
+                return configurationModel.Apis?.Any(value => (value.Name?.Equals(apiDiagnosticApiName) ?? false)
+                                                             && (value.Diagnostics?.Any(value => value.Name?.Equals(apiDiagnosticName) ?? false) ?? false)) ?? false;
+            default:
+                return false;
+        }
+    }
+
+    private async ValueTask DeleteFiles(IReadOnlyCollection<FileRecord> files, CancellationToken cancellationToken)
+    {
+        var servicePolicyFiles = files.Choose(file => file as ServicePolicyFile).ToList();
+        var gatewayInformationFiles = files.Choose(file => file as GatewayInformationFile).ToList();
+        var namedValueInformationFiles = files.Choose(file => file as NamedValueInformationFile).ToList();
+        var loggerInformationFiles = files.Choose(file => file as LoggerInformationFile).ToList();
+        var gatewayApisFiles = files.Choose(file => file as GatewayApisFile).ToList();
+        var productInformationFiles = files.Choose(file => file as ProductInformationFile).ToList();
+        var productPolicyFiles = files.Choose(file => file as ProductPolicyFile).ToList();
+        var productApisFiles = files.Choose(file => file as ProductApisFile).ToList();
+        var diagnosticInformationFiles = files.Choose(file => file as DiagnosticInformationFile).ToList();
+        var apiVersionSetInformationFiles = files.Choose(file => file as ApiVersionSetInformationFile).ToList();
+        var apiInformationFiles = files.Choose(file => file as ApiInformationFile).ToList();
+        var apiDiagnosticInformationFiles = files.Choose(file => file as ApiDiagnosticInformationFile).ToList();
+        var apiPolicyFiles = files.Choose(file => file as ApiPolicyFile).ToList();
+        var apiOperationPolicyFiles = files.Choose(file => file as ApiOperationPolicyFile).ToList();
 
         await DeleteApiOperationPolicies(apiOperationPolicyFiles, cancellationToken);
         await DeleteApiDiagnostics(apiDiagnosticInformationFiles, cancellationToken);
@@ -197,54 +259,26 @@ internal class Publisher : BackgroundService
         await DeleteDiagnostics(diagnosticInformationFiles, cancellationToken);
         await DeleteNamedValues(namedValueInformationFiles, cancellationToken);
         await DeleteServicePolicy(servicePolicyFiles, cancellationToken);
-
-        await ValueTask.CompletedTask;
     }
 
-    private async ValueTask PutFiles(IReadOnlyCollection<FileInfo> files, CancellationToken cancellationToken)
+    private async ValueTask PutFiles(IReadOnlyCollection<FileRecord> files, CancellationToken cancellationToken)
     {
-        var serviceInformationFiles = new List<ServiceInformationFile>();
-        var servicePolicyFiles = new List<ServicePolicyFile>();
-        var gatewayInformationFiles = new List<GatewayInformationFile>();
-        var namedValueInformationFiles = new List<NamedValueInformationFile>();
-        var loggerInformationFiles = new List<LoggerInformationFile>();
-        var productInformationFiles = new List<ProductInformationFile>();
-        var productPolicyFiles = new List<ProductPolicyFile>();
-        var gatewayApisFiles = new List<GatewayApisFile>();
-        var productApisFiles = new List<ProductApisFile>();
-        var diagnosticInformationFiles = new List<DiagnosticInformationFile>();
-        var apiVersionSetInformationFiles = new List<ApiVersionSetInformationFile>();
-        var apiInformationFiles = new List<ApiInformationFile>();
-        var apiSpecificationFiles = new List<ApiSpecificationFile>();
-        var apiDiagnosticInformationFiles = new List<ApiDiagnosticInformationFile>();
-        var apiPolicyFiles = new List<ApiPolicyFile>();
-        var apiOperationPolicyFiles = new List<ApiOperationPolicyFile>();
+        var servicePolicyFiles = files.Choose(file => file as ServicePolicyFile).ToList();
+        var gatewayInformationFiles = files.Choose(file => file as GatewayInformationFile).ToList();
+        var namedValueInformationFiles = files.Choose(file => file as NamedValueInformationFile).ToList();
+        var loggerInformationFiles = files.Choose(file => file as LoggerInformationFile).ToList();
+        var productInformationFiles = files.Choose(file => file as ProductInformationFile).ToList();
+        var productPolicyFiles = files.Choose(file => file as ProductPolicyFile).ToList();
+        var gatewayApisFiles = files.Choose(file => file as GatewayApisFile).ToList();
+        var productApisFiles = files.Choose(file => file as ProductApisFile).ToList();
+        var diagnosticInformationFiles = files.Choose(file => file as DiagnosticInformationFile).ToList();
+        var apiVersionSetInformationFiles = files.Choose(file => file as ApiVersionSetInformationFile).ToList();
+        var apiInformationFiles = files.Choose(file => file as ApiInformationFile).ToList();
+        var apiSpecificationFiles = files.Choose(file => file as ApiSpecificationFile).ToList();
+        var apiDiagnosticInformationFiles = files.Choose(file => file as ApiDiagnosticInformationFile).ToList();
+        var apiPolicyFiles = files.Choose(file => file as ApiPolicyFile).ToList();
+        var apiOperationPolicyFiles = files.Choose(file => file as ApiOperationPolicyFile).ToList();
 
-        foreach (var file in files)
-        {
-            switch (TryClassifyFile(file))
-            {
-                case ServiceInformationFile fileRecord: serviceInformationFiles.Add(fileRecord); break;
-                case ServicePolicyFile fileRecord: servicePolicyFiles.Add(fileRecord); break;
-                case GatewayInformationFile fileRecord: gatewayInformationFiles.Add(fileRecord); break;
-                case NamedValueInformationFile fileRecord: namedValueInformationFiles.Add(fileRecord); break;
-                case LoggerInformationFile fileRecord: loggerInformationFiles.Add(fileRecord); break;
-                case ProductInformationFile fileRecord: productInformationFiles.Add(fileRecord); break;
-                case GatewayApisFile fileRecord: gatewayApisFiles.Add(fileRecord); break;
-                case ProductPolicyFile fileRecord: productPolicyFiles.Add(fileRecord); break;
-                case ProductApisFile fileRecord: productApisFiles.Add(fileRecord); break;
-                case DiagnosticInformationFile fileRecord: diagnosticInformationFiles.Add(fileRecord); break;
-                case ApiVersionSetInformationFile fileRecord: apiVersionSetInformationFiles.Add(fileRecord); break;
-                case ApiInformationFile fileRecord: apiInformationFiles.Add(fileRecord); break;
-                case ApiSpecificationFile fileRecord: apiSpecificationFiles.Add(fileRecord); break;
-                case ApiDiagnosticInformationFile fileRecord: apiDiagnosticInformationFiles.Add(fileRecord); break;
-                case ApiPolicyFile fileRecord: apiPolicyFiles.Add(fileRecord); break;
-                case ApiOperationPolicyFile fileRecord: apiOperationPolicyFiles.Add(fileRecord); break;
-                default: break;
-            }
-        }
-
-        await PutServiceInformationFile(serviceInformationFiles, cancellationToken);
         await PutNamedValueInformationFiles(namedValueInformationFiles, cancellationToken);
         await PutServicePolicyFile(servicePolicyFiles, cancellationToken);
         await PutLoggerInformationFiles(loggerInformationFiles, cancellationToken);
@@ -262,8 +296,7 @@ internal class Publisher : BackgroundService
     }
 
     private FileRecord? TryClassifyFile(FileInfo file) =>
-        ServiceInformationFile.TryFrom(serviceDirectory, file) as FileRecord
-        ?? GatewayInformationFile.TryFrom(serviceDirectory, file) as FileRecord
+        GatewayInformationFile.TryFrom(serviceDirectory, file) as FileRecord
         ?? LoggerInformationFile.TryFrom(serviceDirectory, file) as FileRecord
         ?? ServicePolicyFile.TryFrom(serviceDirectory, file) as FileRecord
         ?? NamedValueInformationFile.TryFrom(serviceDirectory, file) as FileRecord
@@ -278,25 +311,6 @@ internal class Publisher : BackgroundService
         ?? ApiDiagnosticInformationFile.TryFrom(serviceDirectory, file) as FileRecord
         ?? ApiPolicyFile.TryFrom(serviceDirectory, file) as FileRecord
         ?? ApiOperationPolicyFile.TryFrom(serviceDirectory, file) as FileRecord;
-
-    private async ValueTask PutServiceInformationFile(IReadOnlyCollection<ServiceInformationFile> files, CancellationToken cancellationToken)
-    {
-        var serviceInformationFile = files.SingleOrDefault();
-
-        if (serviceInformationFile is not null)
-        {
-            await PutServiceInformationFile(serviceInformationFile, cancellationToken);
-        }
-    }
-
-    private async ValueTask PutServiceInformationFile(ServiceInformationFile file, CancellationToken cancellationToken)
-    {
-        logger.LogInformation("Putting service information file {serviceInformationFile}...", file.Path);
-
-        var json = file.ReadAsJsonObject();
-        var service = Service.Deserialize(json) with { Name = serviceName };
-        await Service.Put(putResource, serviceProviderUri, service, cancellationToken);
-    }
 
     private async ValueTask PutServicePolicyFile(IReadOnlyCollection<ServicePolicyFile> files, CancellationToken cancellationToken)
     {
@@ -381,7 +395,6 @@ internal class Publisher : BackgroundService
 
         await Gateway.Delete(deleteResource, serviceProviderUri, serviceName, name, cancellationToken);
     }
-
 
     private async ValueTask DeleteApiVersionSets(IReadOnlyCollection<ApiVersionSetInformationFile> files, CancellationToken cancellationToken)
     {
@@ -810,12 +823,14 @@ internal class Publisher : BackgroundService
 
     private async ValueTask PutApiInformationAndSpecificationFiles(IReadOnlyCollection<ApiInformationFile> informationFiles, IReadOnlyCollection<ApiSpecificationFile> specificationFiles, CancellationToken cancellationToken)
     {
-        var filePairs = informationFiles.LeftJoin(specificationFiles,
-                                               informationFile => informationFile.ApiDirectory,
-                                               specificationFile => specificationFile.ApiDirectory,
-                                               informationFile => (InformationFile: informationFile, SpecificationFile: null as ApiSpecificationFile),
-                                               (informationFile, specificationFile) => (InformationFile: informationFile, SpecificationFile: specificationFile));
+        var filePairs = informationFiles.FullJoin(specificationFiles,
+                                                  informationFile => informationFile.ApiDirectory,
+                                                  specificationFile => specificationFile.ApiDirectory,
+                                                  informationFile => (InformationFile: informationFile, SpecificationFile: null as ApiSpecificationFile),
+                                                  specificationFile => (InformationFile: ApiInformationFile.From(specificationFile.ApiDirectory), SpecificationFile: specificationFile),
+                                                  (informationFile, specificationFile) => (InformationFile: informationFile, SpecificationFile: specificationFile));
 
+        // Current revisions need to be processed first or else there's an error.
         var splitCurrentRevisions = filePairs.Select(files =>
         {
             var apiJson = files.InformationFile.ReadAsJsonObject();
@@ -825,23 +840,32 @@ internal class Publisher : BackgroundService
         .ToDictionary(x => x.Key ? "Current" : "NonCurrentRevisions", x => x.ToList());
         if (splitCurrentRevisions.TryGetValue("Current", out var currentRevisions)) await Parallel.ForEachAsync(currentRevisions, cancellationToken, (filePair, cancellationToken) => PutApi(filePair.Api, filePair.SpecificationFile, cancellationToken));
         if (splitCurrentRevisions.TryGetValue("NonCurrentRevisions", out var nonCurrentRevisions)) await Parallel.ForEachAsync(nonCurrentRevisions, cancellationToken, (filePair, cancellationToken) => PutApi(filePair.Api, filePair.SpecificationFile, cancellationToken));
-
     }
 
     private async ValueTask PutApi(common.Models.Api api, ApiSpecificationFile? specificationFile, CancellationToken cancellationToken)
     {
         logger.LogInformation("Putting api {api}...", api.Name);
 
-
         if (specificationFile is not null)
         {
             logger.LogInformation("Updating api with specification file {specificationFile}...", specificationFile.Path);
+            // APIM doesn't support Swagger YAML format. We'll convert to Swagger JSON if needed.
+            var specification = specificationFile.Specification;
+
+            var format = ApiSpecification.GetApiPropertiesFormat(specification == OpenApiSpecification.V2Yaml
+                                                                    ? OpenApiSpecification.V2Json
+                                                                    : specification);
+
+            var value = specification == OpenApiSpecification.V2Yaml
+                        ? await ApiSpecification.GetFileContentsAsSpecification(specificationFile, OpenApiSpecification.V2Json)
+                        : await specificationFile.ReadAsText(cancellationToken);
+
             api = api with
             {
                 Properties = api.Properties with
                 {
-                    Format = ApiSpecification.FormatToString(specificationFile.Format),
-                    Value = await specificationFile.ReadAsText(cancellationToken)
+                    Format = format,
+                    Value = value
                 }
             };
         }
@@ -959,7 +983,6 @@ internal class Publisher : BackgroundService
                 }
             };
         }
-        logger.LogInformation($"Api: {apiName} Diag: {JsonSerializer.Serialize(diagnostic)}");
 
         await ApiDiagnostic.Put(putResource, serviceProviderUri, serviceName, apiName, diagnostic, cancellationToken);
     }

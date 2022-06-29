@@ -22,7 +22,8 @@ internal class Extractor : BackgroundService
     private readonly ServiceDirectory serviceDirectory;
     private readonly ServiceProviderUri serviceProviderUri;
     private readonly ServiceName serviceName;
-    private readonly ApiSpecificationFormat specificationFormat;
+    private readonly OpenApiSpecification apiSpecification;
+    private readonly ConfigurationModel configurationModel;
 
     public Extractor(IHostApplicationLifetime applicationLifetime, ILogger<Extractor> logger, IConfiguration configuration, AzureHttpClient azureHttpClient, NonAuthenticatedHttpClient nonAuthenticatedHttpClient)
     {
@@ -34,8 +35,9 @@ internal class Extractor : BackgroundService
         this.getResources = azureHttpClient.GetResourcesAsJsonObjects;
         this.serviceDirectory = GetServiceDirectory(configuration);
         this.serviceProviderUri = GetServiceProviderUri(configuration, azureHttpClient);
-        this.serviceName = ServiceName.From(configuration.GetValue("API_MANAGEMENT_SERVICE_NAME"));
-        this.specificationFormat = GetSpecificationFormat(configuration);
+        this.serviceName = GetServiceName(configuration);
+        this.apiSpecification = GetApiSpecification(configuration);
+        this.configurationModel = configuration.Get<ConfigurationModel>();
     }
 
     private static ServiceDirectory GetServiceDirectory(IConfiguration configuration) =>
@@ -49,15 +51,29 @@ internal class Extractor : BackgroundService
         return ServiceProviderUri.From(azureHttpClient.ResourceManagerEndpoint, subscriptionId, resourceGroupName);
     }
 
-    private static ApiSpecificationFormat GetSpecificationFormat(IConfiguration configuration)
+    private static ServiceName GetServiceName(IConfiguration configuration)
+    {
+        var serviceName = configuration.TryGetValue("API_MANAGEMENT_SERVICE_NAME") ?? configuration.TryGetValue("apimServiceName");
+
+        return ServiceName.From(serviceName ?? throw new InvalidOperationException("Could not find service name in configuration. Either specify it in key 'apimServiceName' or 'API_MANAGEMENT_SERVICE_NAME'."));
+    }
+
+    private static OpenApiSpecification GetApiSpecification(IConfiguration configuration)
     {
         var configurationFormat = configuration.TryGetValue("API_SPECIFICATION_FORMAT");
 
         return configurationFormat is null
-            ? ApiSpecificationFormat.Yaml
-            : Enum.TryParse<ApiSpecificationFormat>(configurationFormat, ignoreCase: true, out var format)
-              ? format
-              : throw new InvalidOperationException("API specification format in configuration is invalid. Accepted values are 'json' and 'yaml'");
+            ? OpenApiSpecification.V3Yaml
+            : configurationFormat switch
+            {
+                _ when configurationFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase) => OpenApiSpecification.V3Json,
+                _ when configurationFormat.Equals("YAML", StringComparison.OrdinalIgnoreCase) => OpenApiSpecification.V3Yaml,
+                _ when configurationFormat.Equals("OpenApiV2Json", StringComparison.OrdinalIgnoreCase) => OpenApiSpecification.V2Json,
+                _ when configurationFormat.Equals("OpenApiV2Yaml", StringComparison.OrdinalIgnoreCase) => OpenApiSpecification.V2Yaml,
+                _ when configurationFormat.Equals("OpenApiV3Json", StringComparison.OrdinalIgnoreCase) => OpenApiSpecification.V3Json,
+                _ when configurationFormat.Equals("OpenApiV3Yaml", StringComparison.OrdinalIgnoreCase) => OpenApiSpecification.V3Yaml,
+                _ => throw new InvalidOperationException($"API specification format '{configurationFormat}' defined in configuration is not supported.")
+            };
     }
 
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
@@ -88,7 +104,6 @@ internal class Extractor : BackgroundService
 
     private async ValueTask Run(CancellationToken cancellationToken)
     {
-        await ExportServiceInformation(cancellationToken);
         await ExportServicePolicy(cancellationToken);
         await ExportNamedValues(cancellationToken);
         await ExportGateways(cancellationToken);
@@ -97,16 +112,6 @@ internal class Extractor : BackgroundService
         await ExportApis(cancellationToken);
         await ExportVersionSets(cancellationToken);
         await ExportDiagnostics(cancellationToken);
-    }
-
-    private async ValueTask ExportServiceInformation(CancellationToken cancellationToken)
-    {
-        logger.LogInformation("Exporting service information...");
-
-        var file = ServiceInformationFile.From(serviceDirectory);
-        var service = await Service.Get(getResource, serviceProviderUri, serviceName, cancellationToken);
-        var json = Service.Serialize(service);
-        await file.OverwriteWithJson(json, cancellationToken);
     }
 
     private async ValueTask ExportServicePolicy(CancellationToken cancellationToken)
@@ -153,9 +158,14 @@ internal class Extractor : BackgroundService
         var gatewayName = GatewayName.From(gateway.Name);
 
         var jsonArray = new JsonArray();
-        await GatewayApi.List(getResources, serviceProviderUri, serviceName, gatewayName, cancellationToken)
-                        .Select(api => new JsonObject().AddProperty("name", api.Name))
-                        .ForEachAsync(jsonObject => jsonArray.Add(jsonObject), cancellationToken);
+
+        var apis =
+            configurationModel.ApiDisplayNames is not null
+            ? GatewayApi.List(getResources, serviceProviderUri, serviceName, gatewayName, configurationModel.ApiDisplayNames, cancellationToken)
+            : GatewayApi.List(getResources, serviceProviderUri, serviceName, gatewayName, cancellationToken);
+
+        await apis.Select(api => new JsonObject().AddProperty("name", api.Name))
+                  .ForEachAsync(jsonObject => jsonArray.Add(jsonObject), cancellationToken);
 
         if (jsonArray.Any())
         {
@@ -268,9 +278,14 @@ internal class Extractor : BackgroundService
         var productName = ProductName.From(product.Name);
 
         var jsonArray = new JsonArray();
-        await ProductApi.List(getResources, serviceProviderUri, serviceName, productName, cancellationToken)
-                        .Select(api => new JsonObject().AddProperty("name", api.Name))
-                        .ForEachAsync(jsonObject => jsonArray.Add(jsonObject), cancellationToken);
+
+        var apis =
+            configurationModel.ApiDisplayNames is not null
+            ? ProductApi.List(getResources, serviceProviderUri, serviceName, productName, configurationModel.ApiDisplayNames, cancellationToken)
+            : ProductApi.List(getResources, serviceProviderUri, serviceName, productName, cancellationToken);
+
+        await apis.Select(api => new JsonObject().AddProperty("name", api.Name))
+                  .ForEachAsync(jsonObject => jsonArray.Add(jsonObject), cancellationToken);
 
         if (jsonArray.Any())
         {
@@ -311,7 +326,10 @@ internal class Extractor : BackgroundService
 
     private async ValueTask ExportVersionSets(CancellationToken cancellationToken)
     {
-        var versionSets = ApiVersionSet.List(getResources, serviceProviderUri, serviceName, cancellationToken);
+        var versionSets =
+            configurationModel.ApiDisplayNames is not null
+            ? ApiVersionSet.List(getResources, serviceProviderUri, serviceName, configurationModel.ApiDisplayNames, cancellationToken)
+            : ApiVersionSet.List(getResources, serviceProviderUri, serviceName, cancellationToken);
 
         await Parallel.ForEachAsync(versionSets, cancellationToken, ExportVersionSet);
     }
@@ -333,7 +351,10 @@ internal class Extractor : BackgroundService
 
     private async ValueTask ExportApis(CancellationToken cancellationToken)
     {
-        var apis = Api.List(getResources, serviceProviderUri, serviceName, cancellationToken);
+        var apis =
+            configurationModel.ApiDisplayNames is not null
+            ? Api.List(getResources, serviceProviderUri, serviceName, configurationModel.ApiDisplayNames, cancellationToken)
+            : Api.List(getResources, serviceProviderUri, serviceName, cancellationToken);
 
         await Parallel.ForEachAsync(apis, cancellationToken, ExportApi);
     }
@@ -392,11 +413,11 @@ internal class Extractor : BackgroundService
         var apiVersion = ApiVersion.From(api.Properties.ApiVersion);
         var apiRevision = ApiRevision.From(api.Properties.ApiRevision);
         var apiDirectory = ApiDirectory.From(apisDirectory, apiDisplayName, apiVersion, apiRevision);
-        var file = ApiSpecificationFile.From(apiDirectory, specificationFormat);
+        var file = ApiSpecificationFile.From(apiDirectory, apiSpecification);
 
         var apiName = ApiName.From(api.Name);
         var downloader = nonAuthenticatedHttpClient.GetSuccessfulResponseStream;
-        using var specificationStream = await ApiSpecification.Get(getResource, downloader, serviceProviderUri, serviceName, apiName, specificationFormat, cancellationToken);
+        using var specificationStream = await ApiSpecification.Get(getResource, downloader, serviceProviderUri, serviceName, apiName, apiSpecification, cancellationToken);
         await file.OverwriteWithStream(specificationStream, cancellationToken);
     }
 
