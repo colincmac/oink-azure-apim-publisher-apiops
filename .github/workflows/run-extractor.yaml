@@ -1,4 +1,4 @@
-name: Extract APIM Dev Configuration
+name: Extract APIM Staging Configuration
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
 jobs:
   extract:
     runs-on: ubuntu-latest
-    environment: Dev # change this to match the dev environment created in settings 
+    environment: Staging # change this to match the dev environment created in settings 
     steps:
       - uses: actions/checkout@v3
           
