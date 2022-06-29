@@ -1,3 +1,4 @@
+# This is only used if demonstrating a 3 environment scenario (Dev => Staging => Prod)
 apimServiceName: oink-staging-001
 loggers:
     - name: apim-dev

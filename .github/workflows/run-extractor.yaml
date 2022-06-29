@@ -6,7 +6,7 @@ on:
 jobs:
   extract:
     runs-on: ubuntu-latest
-    environment: Staging # change this to match the dev environment created in settings 
+    environment: Staging
     steps:
       - uses: actions/checkout@v3
           
